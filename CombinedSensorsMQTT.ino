@@ -5,20 +5,29 @@
 #include <driver/adc.h>
 
 #define ProximityPin 5
+#define buzzer 4
 #define LED 2
 #define tempHumidFreq 15
+#define GasPin ADC1_CHANNEL_0
+#define SoilPin ADC1_CHANNEL_3
 #define minutes 60*1000
-#define gasThreshold 7750
+#define gasThreshold 5
+#define avgArraySize 10
 
+//#define withMQTT
+#define withAvg
 
 /*WiFi Settings*/
-const char* ssid = "UPC2888929";
-const char* password = "Xtjmbpxs7bws";
-const char* mqtt_server = "test.mosquitto.org";
+//const char* ssid = "UPC2888929";
+//const char* password = "Xtjmbpxs7bws";
+//const char* mqtt_server = "test.mosquitto.org";
 //
 //const char* ssid = "EitDigital";
 //const char* password = "digital2019";
-//const char* mqtt_server = "test.mosquitto.org";
+
+const char* ssid = "NightFury";
+const char* password = "15223611676";
+const char* mqtt_server = "test.mosquitto.org";
 
 /*Variable Declarations*/
 WiFiClient espClient;
@@ -29,16 +38,18 @@ int value = 0;
 float analogReadVar;
 DHTesp dht;
 bool proxFlag = false;
+int looper =0;
+int soilAvgArray[avgArraySize];
+int gasAvgArray[avgArraySize];
+
+
 
 void setup_wifi() 
 {
 
   delay(10);
 
-  pinMode(ProximityPin, INPUT);
-  pinMode(LED, OUTPUT);
-  digitalWrite(LED, LOW);
-  
+
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
@@ -114,39 +125,76 @@ void reconnect()
 void setup() 
 {
 //  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
+
+/*Initialize Average Arrays*/
+
+
+  pinMode(ProximityPin, INPUT);
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, LOW);
+
+  pinMode(buzzer, OUTPUT);
+  digitalWrite(buzzer, LOW);
+  
   Serial.begin(115200);
+
+  /*Wifi Setup*/
+  #ifdef withMQTT
   setup_wifi();
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
+  #endif
 
   /*ADC Configuration*/
-  adc1_config_width(ADC_WIDTH_BIT_12);
-  adc1_config_channel_atten(ADC1_CHANNEL_0,ADC_ATTEN_DB_0);
+  adc1_config_width(ADC_WIDTH_BIT_10);
+  adc1_config_channel_atten(GasPin, ADC_ATTEN_DB_11);
+  adc1_config_channel_atten(SoilPin, ADC_ATTEN_DB_11);
+
+  delay(1000);
   
-  dht.setup(15, DHTesp::DHT11); // Connect DHT sensor to GPIO 17
+  #ifdef withAvg
+    for(looper = 0; looper <= avgArraySize-1; looper++)
+    { 
+        soilAvgArray[looper] = adc1_get_raw(SoilPin);
+        delay(10);
+        gasAvgArray[looper] = adc1_get_raw(GasPin);
+        delay(10);
+    }
+    Serial.println("Average Arrays Initiated!");
+
+//     for(looper = 0; looper <= avgArraySize-1; looper++)
+//    { 
+//        Serial.print(soilAvgArray[looper]);
+//        Serial.print("\n");
+//        delay(10);
+//    }
+//
+//     for(looper = 0; looper <= avgArraySize-1; looper++)
+//    { 
+//        Serial.print(gasAvgArray[looper]);
+//        Serial.print("\n");
+//        delay(10);
+//    }
+  #endif
+
+  dht.setup(15, DHTesp::DHT11); // Connect DHT sensor to GPIO 15
   delay(1000);
   Serial.println("Notification Alerts are turned ON! ");
   delay(1000);
 }
 
-void delayMinutes(uint8_t mins)
-{
-    uint16_t i;
-    
-    for(i=0; i > (60*mins); i++)
-    {
-      delay(1000); 
-    } 
-}
 
 void loop() 
 {
+  #ifdef withMQTT  
 
   if (!client.connected()) 
   {
     reconnect();
   }
   client.loop();
+
+  #endif
   
 
 //  long now = millis();
@@ -167,26 +215,90 @@ void loop()
           snprintf (msg, 50, "%f", temperature);
           Serial.print("Publish message: ");
           Serial.println(msg);
+          #ifdef withMQTT
           client.publish("5b957e88f3b6e2217420d1b4-smarthome/temperature", msg);
+          #endif
+
+          
     
           float humidity = dht.getHumidity();
           snprintf (msg, 50, "%f", humidity);
           Serial.print("Publish message: ");
           Serial.println(msg);
+          #ifdef withMQTT
           client.publish("5b957e88f3b6e2217420d1b4-smarthome/moisture", msg);
+          #endif
+
+          
                    
      }
       
-        
-    int gasValue = adc1_get_raw(ADC1_CHANNEL_0);
-    if(gasValue>gasThreshold)
+
+    /* Moving average for gas value*/
+
+    float avgGasValue =  0;
+
+    #ifdef withAvg
+    for(looper=1; looper<=avgArraySize-1; looper++)
     {
-      snprintf (msg, 50, "%d", gasValue);
+      avgGasValue += (float) gasAvgArray[looper];
+      gasAvgArray[looper-1] = gasAvgArray[looper];      
+    }
+
+    gasAvgArray[avgArraySize]=(float)adc1_get_raw(GasPin); 
+    avgGasValue += (float)adc1_get_raw(GasPin);
+    avgGasValue = avgGasValue/(float)avgArraySize;
+    #else
+    avgGasValue = (float)adc1_get_raw(GasPin);
+    #endif
+    /*---------------------------------------------*/
+
+    
+    if(avgGasValue>gasThreshold)
+    {
+      digitalWrite(buzzer, HIGH);
+      snprintf (msg, 50, "%d", (int)avgGasValue);
       Serial.print("Gas Threshold Reached ");
       Serial.println(msg);
+      #ifdef withMQTT
       client.publish("5b957e88f3b6e2217420d1b4-smarthome/gas", msg);
+      #endif
+
+      
     }
+
+    else
+    {
+      digitalWrite(buzzer, LOW);  
+    };
+
+    /* Moving average for soil value*/
+    float avgSoilValue = 0;
+    #ifdef withAvg
+    for(looper=1; looper<avgArraySize-1; looper++)
+    {
+      avgSoilValue += (float) gasAvgArray[looper];
+      gasAvgArray[looper-1] = gasAvgArray[looper];      
+    }
+    gasAvgArray[avgArraySize] = (float)adc1_get_raw(SoilPin);
+    avgSoilValue += (float)adc1_get_raw(SoilPin);
+    avgSoilValue = avgSoilValue/avgArraySize;
+    #else
+    avgSoilValue = (float)adc1_get_raw(SoilPin);
+    #endif
+   /*---------------------------------------------*/
     
+    if( 1/*soilValue>gasThreshold &&*/ )
+    {
+      snprintf (msg, 50, "%d",(int)avgSoilValue);
+      Serial.print("Soil ");
+      Serial.println(msg);
+      #ifdef withMQTT
+      client.publish("5b957e88f3b6e2217420d1b4-smarthome/gas", msg);
+      #endif
+    }
+    else;
+
 
 
    if((digitalRead(ProximityPin) == HIGH) && proxFlag == false)
@@ -195,8 +307,10 @@ void loop()
     snprintf (msg, 50, "ProximityHIGH");
     Serial.print("Publish message: ");
     Serial.println(msg);
-    client.publish("5b957e88f3b6e2217420d1b4-smarthome/movement", msg);
-    digitalWrite(LED, HIGH);
+      #ifdef withMQTT
+      client.publish("5b957e88f3b6e2217420d1b4-smarthome/movement", msg);
+      #endif
+      digitalWrite(LED, HIGH);
   }
   
   else if(digitalRead(ProximityPin) == LOW)
@@ -204,7 +318,7 @@ void loop()
     //Serial.println("\nPresence NOT Detected!!!");
     digitalWrite(LED, LOW);
     proxFlag = false;
-  }
+  };
 
 
 }
