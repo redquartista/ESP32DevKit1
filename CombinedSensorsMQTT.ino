@@ -6,27 +6,31 @@
 
 #define ProximityPin 5
 #define buzzer 4
-#define LED 2
+#define LED 2 //onboard led
 #define tempHumidFreq 15
 #define GasPin ADC1_CHANNEL_0
 #define SoilPin ADC1_CHANNEL_3
 #define minutes 60*1000
-#define gasThreshold 5
+#define gasThreshold 750
 #define avgArraySize 10
+#define HallwayLED 19
+#define KitchenLED 21 
 
-//#define withMQTT
+
+
+#define withMQTT
 #define withAvg
 
 /*WiFi Settings*/
 //const char* ssid = "UPC2888929";
 //const char* password = "Xtjmbpxs7bws";
-//const char* mqtt_server = "test.mosquitto.org";
-//
-//const char* ssid = "EitDigital";
-//const char* password = "digital2019";
 
-const char* ssid = "NightFury";
-const char* password = "15223611676";
+
+const char* ssid = "EitDigital";
+const char* password = "digital2019";
+
+//const char* ssid = "NightFury";
+//const char* password = "15223611676";
 const char* mqtt_server = "test.mosquitto.org";
 
 /*Variable Declarations*/
@@ -72,26 +76,62 @@ void setup_wifi()
 
 void callback(char* topic, byte* payload, unsigned int length) 
 {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (int i = 0; i < length; i++) 
+  char * hallway = "5b957e88f3b6e2217420d1b4-smarthome/hallway";
+  char * kitchen = "5b957e88f3b6e2217420d1b4-smarthome/kitchen";
+  if( (strcmp(topic, hallway)==0) || (strcmp(topic, kitchen) == 0))
   {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
+    Serial.print("Message arrived [");
+    Serial.print(topic);
+    Serial.print("] ");
+    for (int i = 0; i < length; i++) 
+    {
+      Serial.print((char)payload[i]);
+    }
+    Serial.println();
 
-  // Switch on the LED if an 1 was received as first character
-  if ((char)payload[0] == '1') 
-  {
-    //digitalWrite(BUILTIN_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
-    // but actually the LED is on; this is because
-    // it is active low on the ESP-01)
-  } else 
-  {
-    //digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
-  }
+     if((strcmp(topic, hallway)==0)) 
+     {
+      
+      //Switch on the LED if an 1 was received as first character
+      if ((char)payload[0] == '1') 
+      {
+        //digitalWrite(BUILTIN_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
+        // but actually the LED is on; this is because
+        // it is active low on the ESP-01)
+        Serial.println("Hallway LED ON");
+        digitalWrite(HallwayLED, HIGH);
+      } 
+      else 
+      {
+      //digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
+      Serial.println("Hallway LED Off");
+      digitalWrite(HallwayLED, LOW);
+      }
+      
+     };
 
+     if((strcmp(topic, kitchen)==0)) 
+     {
+      
+      //Switch on the LED if an 1 was received as first character
+      if ((char)payload[0] == '1') 
+      {
+        //digitalWrite(BUILTIN_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
+        // but actually the LED is on; this is because
+        // it is active low on the ESP-01)
+        Serial.println("Kitchen LED ON");
+        digitalWrite(KitchenLED, HIGH);
+      } 
+      else 
+      {
+      //digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
+        Serial.println("Kitchen LED Off");
+        digitalWrite(KitchenLED, LOW);
+      }
+      
+     };
+     
+  }
 }
 
 void reconnect() 
@@ -109,7 +149,7 @@ void reconnect()
       // Once connected, publish an announcement...
       client.publish("5b957e88f3b6e2217420d1b4-smarthome", "hello world");
       // ... and resubscribe
-      client.subscribe("5b957e88f3b6e2217420d1b4-smarthome");
+      client.subscribe("5b957e88f3b6e2217420d1b4-smarthome/#");
     } 
     else 
     {
@@ -133,6 +173,14 @@ void setup()
   pinMode(LED, OUTPUT);
   digitalWrite(LED, LOW);
 
+  pinMode(HallwayLED, OUTPUT);
+  digitalWrite(HallwayLED, LOW);
+
+  pinMode(KitchenLED, OUTPUT);
+  digitalWrite(KitchenLED, LOW);
+
+
+  
   pinMode(buzzer, OUTPUT);
   digitalWrite(buzzer, LOW);
   
@@ -143,6 +191,7 @@ void setup()
   setup_wifi();
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
+  client.subscribe("5b957e88f3b6e2217420d1b4-smarthome/#");
   #endif
 
   /*ADC Configuration*/
@@ -203,6 +252,10 @@ void loop()
 //    lastMsg = now;
 //    ++value;
 
+
+   /*---------------------------------------------*/
+
+
     delay(dht.getMinimumSamplingPeriod());
 
     
@@ -226,12 +279,34 @@ void loop()
           Serial.print("Publish message: ");
           Serial.println(msg);
           #ifdef withMQTT
+          client.publish("5b957e88f3b6e2217420d1b4-smarthome/humidity", msg);
+          #endif
+
+            /* Moving average for soil value*/
+          float avgSoilValue = 0;
+          #ifdef withAvg
+          for(looper=1; looper<avgArraySize-1; looper++)
+          {
+            avgSoilValue += (float) gasAvgArray[looper];
+            gasAvgArray[looper-1] = gasAvgArray[looper];      
+          }
+          gasAvgArray[avgArraySize] = (float)adc1_get_raw(SoilPin);
+          avgSoilValue += (float)adc1_get_raw(SoilPin);
+          avgSoilValue = avgSoilValue/avgArraySize;
+          #else
+          avgSoilValue = (float)adc1_get_raw(SoilPin);
+          #endif
+          
+
+          snprintf (msg, 50, "%d",(int)avgSoilValue);
+          Serial.print("Soil ");
+          Serial.println(msg);
+          #ifdef withMQTT
           client.publish("5b957e88f3b6e2217420d1b4-smarthome/moisture", msg);
           #endif
 
-          
                    
-     }
+       }
       
 
     /* Moving average for gas value*/
@@ -272,34 +347,7 @@ void loop()
       digitalWrite(buzzer, LOW);  
     };
 
-    /* Moving average for soil value*/
-    float avgSoilValue = 0;
-    #ifdef withAvg
-    for(looper=1; looper<avgArraySize-1; looper++)
-    {
-      avgSoilValue += (float) gasAvgArray[looper];
-      gasAvgArray[looper-1] = gasAvgArray[looper];      
-    }
-    gasAvgArray[avgArraySize] = (float)adc1_get_raw(SoilPin);
-    avgSoilValue += (float)adc1_get_raw(SoilPin);
-    avgSoilValue = avgSoilValue/avgArraySize;
-    #else
-    avgSoilValue = (float)adc1_get_raw(SoilPin);
-    #endif
-   /*---------------------------------------------*/
     
-    if( 1/*soilValue>gasThreshold &&*/ )
-    {
-      snprintf (msg, 50, "%d",(int)avgSoilValue);
-      Serial.print("Soil ");
-      Serial.println(msg);
-      #ifdef withMQTT
-      client.publish("5b957e88f3b6e2217420d1b4-smarthome/gas", msg);
-      #endif
-    }
-    else;
-
-
 
    if((digitalRead(ProximityPin) == HIGH) && proxFlag == false)
   {
