@@ -4,17 +4,21 @@
 #include "DHTesp.h"
 #include <driver/adc.h>
 
+/*Pin Connections for Sensors*/
 #define ProximityPin 5
 #define buzzer 4
 #define LED 2 //onboard led
-#define tempHumidFreq 15
 #define GasPin ADC1_CHANNEL_0
 #define SoilPin ADC1_CHANNEL_3
-#define minutes 60*1000
-#define gasThreshold 750
-#define avgArraySize 10
 #define HallwayLED 19
 #define KitchenLED 21 
+
+
+#define tempHumidFreq 15 //Frequency at which temperature and humidity values are sent
+#define minutes 60*1000 
+#define gasThreshold 750 //Threshold value for gas
+#define avgArraySize 10 
+
 
 
 
@@ -29,8 +33,7 @@
 const char* ssid = "EitDigital";
 const char* password = "digital2019";
 
-//const char* ssid = "NightFury";
-//const char* password = "15223611676";
+
 const char* mqtt_server = "test.mosquitto.org";
 
 /*Variable Declarations*/
@@ -38,8 +41,8 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 long lastMsg = -(tempHumidFreq+1)*minutes;
 char msg[500];
-int value = 0;
-float analogReadVar;
+
+
 DHTesp dht;
 bool proxFlag = false;
 int looper =0;
@@ -47,7 +50,8 @@ int soilAvgArray[avgArraySize];
 int gasAvgArray[avgArraySize];
 
 
-
+/*Function to connect to the WiFi and display the WiFi name*/
+ 
 void setup_wifi() 
 {
 
@@ -74,6 +78,7 @@ void setup_wifi()
   Serial.println(WiFi.localIP());
 }
 
+/*Function that processes the data acquired from MQTT*/
 void callback(char* topic, byte* payload, unsigned int length) 
 {
   char * hallway = "5b957e88f3b6e2217420d1b4-smarthome/hallway";
@@ -89,42 +94,37 @@ void callback(char* topic, byte* payload, unsigned int length)
     }
     Serial.println();
 
-     if((strcmp(topic, hallway)==0)) 
+     if((strcmp(topic, hallway)==0)) //if Hallway LED topic is detected
      {
       
       //Switch on the LED if an 1 was received as first character
       if ((char)payload[0] == '1') 
       {
-        //digitalWrite(BUILTIN_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
-        // but actually the LED is on; this is because
-        // it is active low on the ESP-01)
+
         Serial.println("Hallway LED ON");
         digitalWrite(HallwayLED, HIGH);
       } 
       else 
       {
-      //digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
+
       Serial.println("Hallway LED Off");
       digitalWrite(HallwayLED, LOW);
       }
       
      };
 
-     if((strcmp(topic, kitchen)==0)) 
+     if((strcmp(topic, kitchen)==0)) //if Kitchen LED topic is detected
      {
       
       //Switch on the LED if an 1 was received as first character
       if ((char)payload[0] == '1') 
       {
-        //digitalWrite(BUILTIN_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
-        // but actually the LED is on; this is because
-        // it is active low on the ESP-01)
+
         Serial.println("Kitchen LED ON");
         digitalWrite(KitchenLED, HIGH);
       } 
       else 
       {
-      //digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
         Serial.println("Kitchen LED Off");
         digitalWrite(KitchenLED, LOW);
       }
@@ -164,12 +164,13 @@ void reconnect()
 
 void setup() 
 {
-//  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
+
 
 /*Initialize Average Arrays*/
 
-
+/*Initialize a pin to interface proximity sensor as Input and the pins for LEDs, buzzer as ooutput*/
   pinMode(ProximityPin, INPUT);
+  
   pinMode(LED, OUTPUT);
   digitalWrite(LED, LOW);
 
@@ -179,8 +180,6 @@ void setup()
   pinMode(KitchenLED, OUTPUT);
   digitalWrite(KitchenLED, LOW);
 
-
-  
   pinMode(buzzer, OUTPUT);
   digitalWrite(buzzer, LOW);
   
@@ -191,7 +190,7 @@ void setup()
   setup_wifi();
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
-  client.subscribe("5b957e88f3b6e2217420d1b4-smarthome/#");
+  client.subscribe("5b957e88f3b6e2217420d1b4-smarthome/#"); //Subscribe to the MQTT topic of Smart Home
   #endif
 
   /*ADC Configuration*/
@@ -246,11 +245,7 @@ void loop()
   #endif
   
 
-//  long now = millis();
-//  if (now - lastMsg > 2000) 
-//  {
-//    lastMsg = now;
-//    ++value;
+
 
 
    /*---------------------------------------------*/
